@@ -275,6 +275,7 @@ const preloadButton = byId<HTMLButtonElement>("preload");
 const playButton = byId<HTMLButtonElement>("play");
 const pauseButton = byId<HTMLButtonElement>("pause");
 const stopButton = byId<HTMLButtonElement>("stop");
+const playLoopToggle = byId<HTMLInputElement>("play-loop-toggle");
 const video = byId<HTMLVideoElement>("video");
 const playBasicStatus = byId<HTMLDivElement>("play-basic-status");
 const playPacketList = byId<HTMLDivElement>("play-packet-list");
@@ -325,7 +326,8 @@ function showPlayStatus(note?: { text: string; error?: boolean }): void {
     { label: "Ready", value: preloaded },
     { label: "Time", value: `${video.currentTime.toFixed(3)}s` },
     { label: "Sent", value: `${lastSentIndex}/${lastTotal}` },
-    { label: "Offset", value: `${offsetMs()}ms` }
+    { label: "Offset", value: `${offsetMs()}ms` },
+    { label: "Loop", value: playLoopToggle.checked }
   ]);
   renderPlayPacketRows(recentSentPackets);
   if (note) {
@@ -378,9 +380,31 @@ function startSyncLoop(): void {
   void tickOnce();
 }
 
+async function startSynchronizedPlayFromCurrentTime(): Promise<void> {
+  if (!preloaded) {
+    throw new Error("先にPRELOADを実行してください。");
+  }
+
+  await getApi().playSetTarget(targetIpInput.value, Number(targetPortInput.value));
+
+  const startTime = video.currentTime + offsetMs() / 1000;
+  const resetResult = await getApi().playResetToTime(startTime);
+  lastSentIndex = resetResult.index ?? 0;
+  recentSentPackets = [];
+
+  const playingEvent = waitForPlayingEvent();
+  await video.play();
+  await playingEvent;
+  startSyncLoop();
+}
+
 offsetInput.addEventListener("input", () => {
   offsetValue.textContent = offsetInput.value;
   showPlayStatus();
+});
+
+playLoopToggle.addEventListener("change", () => {
+  showPlayStatus({ text: playLoopToggle.checked ? "Loop ON" : "Loop OFF" });
 });
 
 udpListenPortInput.addEventListener("change", async () => {
@@ -479,19 +503,7 @@ async function preloadSelectedMedia(): Promise<void> {
 
 playButton.addEventListener("click", async () => {
   try {
-    if (!preloaded) {
-      throw new Error("先にPRELOADを実行してください。");
-    }
-    await getApi().playSetTarget(targetIpInput.value, Number(targetPortInput.value));
-
-    const startTime = video.currentTime + offsetMs() / 1000;
-    const resetResult = await getApi().playResetToTime(startTime);
-    lastSentIndex = resetResult.index ?? 0;
-
-    const playingEvent = waitForPlayingEvent();
-    await video.play();
-    await playingEvent;
-    startSyncLoop();
+    await startSynchronizedPlayFromCurrentTime();
     showPlayStatus({ text: "Playing" });
   } catch (error) {
     showPlayStatus({ text: (error as Error).message, error: true });
@@ -532,6 +544,17 @@ video.addEventListener("seeked", async () => {
 
 video.addEventListener("ended", async () => {
   stopTickLoop();
+  if (playLoopToggle.checked) {
+    try {
+      video.currentTime = 0;
+      await startSynchronizedPlayFromCurrentTime();
+      showPlayStatus({ text: "Looping" });
+      return;
+    } catch (error) {
+      showPlayStatus({ text: `Loop error: ${(error as Error).message}`, error: true });
+      return;
+    }
+  }
   const resetResult = await getApi().playResetToTime(0);
   lastSentIndex = resetResult.index ?? 0;
   recentSentPackets = [];

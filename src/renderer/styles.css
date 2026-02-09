@@ -109,6 +109,8 @@ input[readonly] {
   display: flex;
   gap: 8px;
   margin: 10px 0;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 button {
@@ -117,6 +119,21 @@ button {
   background: #fff;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+.toggle-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+  margin-left: 4px;
+}
+
+.toggle-inline input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
 }
 
 #rec-start,
