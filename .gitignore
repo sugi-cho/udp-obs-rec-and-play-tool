@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+.npm-cache/
+
+# Build outputs
+dist/
+release/
+out/
+
+# Runtime/generated data
+recordings/
+*.log
+
+# Bundled sample media (keep only instructions file)
+default-media/*
+!default-media/README.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UDP-OBS-Rec-and-Play-Tool</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="tabs">
+        <button id="tab-rec" class="tab" type="button">REC</button>
+        <button id="tab-play" class="tab active" type="button">PLAY</button>
+      </header>
+
+      <section id="view-rec" class="view">
+        <h1>REC</h1>
+        <div class="panel">
+          <div class="row two">
+            <label>
+              OBS WS URL
+              <input id="obs-url" value="ws://127.0.0.1:4455" />
+            </label>
+            <label>
+              OBS Password
+              <input id="obs-password" type="password" />
+            </label>
+          </div>
+
+          <div class="row two">
+            <label>
+              UDP Listen Port
+              <input id="udp-listen-port" type="number" min="1" max="65535" value="5005" />
+            </label>
+            <label>
+              Output Directory
+              <div class="inline">
+                <input id="output-dir" value="./recordings" />
+                <button id="choose-output-dir" type="button">選択</button>
+              </div>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="connect-obs" type="button">Connect</button>
+            <button id="rec-start" type="button">REC START</button>
+            <button id="rec-stop" type="button">REC STOP</button>
+          </div>
+
+          <div class="status-block">
+            <div id="rec-basic-status" class="status-line"></div>
+            <div id="rec-packet-list" class="packet-list"></div>
+            <div id="rec-note" class="status-note"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-play" class="view active">
+        <h1>PLAY</h1>
+        <div class="panel">
+          <div class="row two">
+            <label>
+              MP4 File
+              <div class="inline">
+                <input id="mp4-path" readonly />
+                <button id="choose-mp4" type="button">選択</button>
+              </div>
+            </label>
+            <label>
+              UDP Log (udp.jsonl)
+              <div class="inline">
+                <input id="udp-log-path" readonly />
+                <button id="choose-log" type="button">選択</button>
+              </div>
+            </label>
+          </div>
+
+          <div class="row three">
+            <label>
+              Target IP
+              <input id="target-ip" value="127.0.0.1" />
+            </label>
+            <label>
+              Target Port
+              <input id="target-port" type="number" min="1" max="65535" value="5005" />
+            </label>
+            <label>
+              Offset (ms)
+              <div class="inline">
+                <input id="offset-ms" type="range" min="-300" max="300" step="1" value="0" />
+                <span id="offset-value">0</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="preload" type="button">PRELOAD</button>
+            <button id="play" type="button">PLAY</button>
+            <button id="pause" type="button">PAUSE</button>
+            <button id="stop" type="button">STOP</button>
+          </div>
+
+          <video id="video" preload="auto" tabindex="-1" aria-label="Playback preview"></video>
+          <div class="status-block">
+            <div id="play-basic-status" class="status-line"></div>
+            <div id="play-packet-list" class="packet-list"></div>
+            <div id="play-note" class="status-note"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="./renderer.ts"></script>
+  </body>
+</html>
