@@ -2,6 +2,8 @@
 
 OBS録画とUDP記録/再送を同期する、Windows/Mac向けデスクトップアプリのMVPです。
 
+<img width="1161" height="1084" alt="スクリーンショット 2026-02-12 232611" src="https://github.com/user-attachments/assets/99e7219c-b343-4053-9ea0-1bb3d43a995a" />
+
 ## 機能
 - RECタブ
   - OBS接続（WebSocket v5）
@@ -16,6 +18,11 @@ OBS録画とUDP記録/再送を同期する、Windows/Mac向けデスクトッ�
 - ステータス表示
   - REC: `OBS / REC / Packets / Log` を1行表示 + 受信UDP直近4件（累積連番）
   - PLAY: `Ready / Time / Sent / Offset` を1行表示 + 送信UDP直近4件（累積連番）
+
+<img width="1091" height="702" alt="rec" src="https://github.com/user-attachments/assets/61ddbfcf-c946-4939-94b5-f4e295dc56b4" />
+
+<img width="1145" height="499" alt="play" src="https://github.com/user-attachments/assets/9233a7d9-a96c-4b81-a809-4197952729db" />
+
 
 ## ログ形式
 - セッションフォルダ: `session_YYYYMMDD_HHMMSS/`
