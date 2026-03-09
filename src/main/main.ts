@@ -18,6 +18,9 @@ if (!app.isPackaged) {
   app.setPath("userData", devUserDataDir);
   app.commandLine.appendSwitch("disk-cache-dir", path.join(devUserDataDir, "Cache"));
 }
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
 
 const obs = new ObsController();
 const recorder = new UdpRecorder();
@@ -139,6 +142,7 @@ function createMainWindow(): BrowserWindow {
     height: initialHeight,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false
     }
