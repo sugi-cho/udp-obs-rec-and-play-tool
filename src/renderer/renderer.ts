@@ -19,13 +19,13 @@ declare global {
           settings: {
             obs?: { url: string; password: string };
             rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
-            play?: { targetIp: string; targetPort: number };
+            play?: { targetIp: string; targetPort: number; udpOnly: boolean };
           };
         }>
       >;
       savePartialSettings(payload: {
         rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
-        play?: { targetIp: string; targetPort: number };
+        play?: { targetIp: string; targetPort: number; udpOnly: boolean };
       }): Promise<ApiResult>;
       findDefaultMedia(): Promise<
         ApiResult<{
@@ -287,6 +287,7 @@ const preloadButton = byId<HTMLButtonElement>("preload");
 const playButton = byId<HTMLButtonElement>("play");
 const pauseButton = byId<HTMLButtonElement>("pause");
 const stopButton = byId<HTMLButtonElement>("stop");
+const playUdpOnlyToggle = byId<HTMLInputElement>("play-udp-only-toggle");
 const playLoopToggle = byId<HTMLInputElement>("play-loop-toggle");
 const video = byId<HTMLVideoElement>("video");
 const playBasicStatus = byId<HTMLDivElement>("play-basic-status");
@@ -298,6 +299,9 @@ let tickTimer: number | null = null;
 let lastSentIndex = 0;
 let lastTotal = 0;
 let recentSentPackets: { seq: number; t: number; size: number; osc: { text: string } }[] = [];
+let udpOnlyRunning = false;
+let udpOnlyBasePerfMs = 0;
+let udpOnlyCurrentSec = 0;
 
 function stopTickLoop(): void {
   if (tickTimer !== null) {
@@ -308,6 +312,23 @@ function stopTickLoop(): void {
 
 function offsetMs(): number {
   return Number(offsetInput.value);
+}
+
+function currentPlaybackTimeSec(): number {
+  if (playUdpOnlyToggle.checked) {
+    if (!udpOnlyRunning) {
+      return udpOnlyCurrentSec;
+    }
+    return udpOnlyCurrentSec + (performance.now() - udpOnlyBasePerfMs) / 1000;
+  }
+  return video.currentTime;
+}
+
+function setUdpOnlyMode(enabled: boolean): void {
+  playUdpOnlyToggle.checked = enabled;
+  video.classList.toggle("is-hidden", enabled);
+  chooseMp4Button.disabled = enabled;
+  mp4PathInput.disabled = enabled;
 }
 
 function renderPlayPacketRows(
@@ -336,9 +357,10 @@ function renderPlayPacketRows(
 function showPlayStatus(note?: { text: string; error?: boolean }): void {
   renderStatusLine(playBasicStatus, [
     { label: "Ready", value: preloaded },
-    { label: "Time", value: `${video.currentTime.toFixed(3)}s` },
+    { label: "Time", value: `${currentPlaybackTimeSec().toFixed(3)}s` },
     { label: "Sent", value: `${lastSentIndex}/${lastTotal}` },
     { label: "Offset", value: `${offsetMs()}ms` },
+    { label: "UDP Only", value: playUdpOnlyToggle.checked },
     { label: "Loop", value: playLoopToggle.checked }
   ]);
   renderPlayPacketRows(recentSentPackets);
@@ -348,16 +370,35 @@ function showPlayStatus(note?: { text: string; error?: boolean }): void {
 }
 
 async function tickOnce(): Promise<void> {
-  if (video.paused) {
+  if (!playUdpOnlyToggle.checked && video.paused) {
+    stopTickLoop();
+    return;
+  }
+  if (playUdpOnlyToggle.checked && !udpOnlyRunning) {
     stopTickLoop();
     return;
   }
   try {
-    const res = await getApi().playTick(video.currentTime, offsetMs());
+    const res = await getApi().playTick(currentPlaybackTimeSec(), offsetMs());
     lastSentIndex = res.status?.sentIndex ?? lastSentIndex;
     lastTotal = res.status?.total ?? lastTotal;
     recentSentPackets = res.status?.recentSent ?? recentSentPackets;
     showPlayStatus();
+    if (playUdpOnlyToggle.checked && lastTotal > 0 && lastSentIndex >= lastTotal) {
+      udpOnlyRunning = false;
+      udpOnlyCurrentSec = 0;
+      stopTickLoop();
+      if (playLoopToggle.checked) {
+        await startSynchronizedPlayFromCurrentTime();
+        showPlayStatus({ text: "Looping" });
+      } else {
+        await getApi().playResetToTime(0);
+        lastSentIndex = 0;
+        recentSentPackets = [];
+        showPlayStatus({ text: "Ended" });
+      }
+      return;
+    }
   } catch (error) {
     showPlayStatus({ text: (error as Error).message, error: true });
     stopTickLoop();
@@ -399,14 +440,19 @@ async function startSynchronizedPlayFromCurrentTime(): Promise<void> {
 
   await getApi().playSetTarget(targetIpInput.value, Number(targetPortInput.value));
 
-  const startTime = video.currentTime + offsetMs() / 1000;
+  const startTime = currentPlaybackTimeSec() + offsetMs() / 1000;
   const resetResult = await getApi().playResetToTime(startTime);
   lastSentIndex = resetResult.index ?? 0;
   recentSentPackets = [];
 
-  const playingEvent = waitForPlayingEvent();
-  await video.play();
-  await playingEvent;
+  if (playUdpOnlyToggle.checked) {
+    udpOnlyBasePerfMs = performance.now();
+    udpOnlyRunning = true;
+  } else {
+    const playingEvent = waitForPlayingEvent();
+    await video.play();
+    await playingEvent;
+  }
   startSyncLoop();
 }
 
@@ -417,6 +463,25 @@ offsetInput.addEventListener("input", () => {
 
 playLoopToggle.addEventListener("change", () => {
   showPlayStatus({ text: playLoopToggle.checked ? "Loop ON" : "Loop OFF" });
+});
+
+playUdpOnlyToggle.addEventListener("change", async () => {
+  setUdpOnlyMode(playUdpOnlyToggle.checked);
+  udpOnlyRunning = false;
+  udpOnlyCurrentSec = 0;
+  stopTickLoop();
+  if (!playUdpOnlyToggle.checked) {
+    video.pause();
+    video.currentTime = 0;
+  }
+  await getApi().savePartialSettings({
+    play: {
+      targetIp: targetIpInput.value,
+      targetPort: Number(targetPortInput.value),
+      udpOnly: playUdpOnlyToggle.checked
+    }
+  });
+  showPlayStatus({ text: playUdpOnlyToggle.checked ? "UDP Only ON" : "UDP Only OFF" });
 });
 
 udpListenPortInput.addEventListener("change", async () => {
@@ -473,7 +538,7 @@ targetIpInput.addEventListener("change", async () => {
     return;
   }
   await getApi().savePartialSettings({
-    play: { targetIp: targetIpInput.value, targetPort: port }
+    play: { targetIp: targetIpInput.value, targetPort: port, udpOnly: playUdpOnlyToggle.checked }
   });
 });
 
@@ -483,7 +548,7 @@ targetPortInput.addEventListener("change", async () => {
     return;
   }
   await getApi().savePartialSettings({
-    play: { targetIp: targetIpInput.value, targetPort: port }
+    play: { targetIp: targetIpInput.value, targetPort: port, udpOnly: playUdpOnlyToggle.checked }
   });
 });
 
@@ -507,7 +572,7 @@ preloadButton.addEventListener("click", async () => {
 
 async function preloadSelectedMedia(): Promise<void> {
   try {
-    if (!mp4PathInput.value) {
+    if (!playUdpOnlyToggle.checked && !mp4PathInput.value) {
       throw new Error("MP4ファイルを選択してください。");
     }
     if (!udpLogPathInput.value) {
@@ -519,31 +584,39 @@ async function preloadSelectedMedia(): Promise<void> {
     await getApi().playResetToTime(0);
     lastSentIndex = 0;
     recentSentPackets = [];
+    udpOnlyRunning = false;
+    udpOnlyCurrentSec = 0;
 
-    const urlRes = await getApi().pathToFileUrl(mp4PathInput.value);
-    const videoUrl = urlRes.url;
-    if (!urlRes.ok || !videoUrl) {
-      throw new Error("MP4ファイルURLの生成に失敗しました。");
-    }
+    if (!playUdpOnlyToggle.checked) {
+      const urlRes = await getApi().pathToFileUrl(mp4PathInput.value);
+      const videoUrl = urlRes.url;
+      if (!urlRes.ok || !videoUrl) {
+        throw new Error("MP4ファイルURLの生成に失敗しました。");
+      }
 
-    await new Promise<void>((resolve, reject) => {
-      const onReady = () => {
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error("動画の読み込みに失敗しました。"));
-      };
-      const cleanup = () => {
-        video.removeEventListener("canplaythrough", onReady);
-        video.removeEventListener("error", onError);
-      };
-      video.addEventListener("canplaythrough", onReady, { once: true });
-      video.addEventListener("error", onError, { once: true });
-      video.src = videoUrl;
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error("動画の読み込みに失敗しました。"));
+        };
+        const cleanup = () => {
+          video.removeEventListener("canplaythrough", onReady);
+          video.removeEventListener("error", onError);
+        };
+        video.addEventListener("canplaythrough", onReady, { once: true });
+        video.addEventListener("error", onError, { once: true });
+        video.src = videoUrl;
+        video.load();
+      });
+    } else {
+      video.pause();
+      video.removeAttribute("src");
       video.load();
-    });
+    }
 
     preloaded = true;
     showPlayStatus({ text: "Ready" });
@@ -563,12 +636,19 @@ playButton.addEventListener("click", async () => {
 });
 
 pauseButton.addEventListener("click", () => {
-  video.pause();
+  if (playUdpOnlyToggle.checked) {
+    udpOnlyCurrentSec = currentPlaybackTimeSec();
+    udpOnlyRunning = false;
+  } else {
+    video.pause();
+  }
   stopTickLoop();
   showPlayStatus({ text: "Paused" });
 });
 
 stopButton.addEventListener("click", async () => {
+  udpOnlyRunning = false;
+  udpOnlyCurrentSec = 0;
   video.pause();
   stopTickLoop();
   video.currentTime = 0;
@@ -583,7 +663,7 @@ video.addEventListener("seeking", () => {
 });
 
 video.addEventListener("seeked", async () => {
-  if (!preloaded) {
+  if (!preloaded || playUdpOnlyToggle.checked) {
     return;
   }
   const seekTime = video.currentTime + offsetMs() / 1000;
@@ -595,6 +675,9 @@ video.addEventListener("seeked", async () => {
 });
 
 video.addEventListener("ended", async () => {
+  if (playUdpOnlyToggle.checked) {
+    return;
+  }
   stopTickLoop();
   if (playLoopToggle.checked) {
     try {
@@ -678,6 +761,7 @@ if (!window.api) {
         if (typeof appSettingsRes.settings.play?.targetPort === "number") {
           targetPortInput.value = String(appSettingsRes.settings.play.targetPort);
         }
+        setUdpOnlyMode(appSettingsRes.settings.play?.udpOnly === true);
       }
 
       const defaultMediaRes = await getApi().findDefaultMedia();

@@ -158,6 +158,10 @@ video {
   user-select: none;
 }
 
+video.is-hidden {
+  display: none;
+}
+
 .status-block {
   margin: 10px 0 0;
 }

@@ -294,11 +294,13 @@ ipcMain.handle("play:loadLog", async (_event, payload: { udpLogPath: string }) =
 });
 
 ipcMain.handle("play:setTarget", async (_event, payload: { ip: string; port: number }) => {
+  const currentSettings = loadAppSettings();
   player.setTarget(payload.ip, payload.port);
   saveAppSettings({
     play: {
       targetIp: payload.ip,
-      targetPort: payload.port
+      targetPort: payload.port,
+      udpOnly: currentSettings.play?.udpOnly === true
     }
   });
   return { ok: true };
@@ -322,7 +324,7 @@ ipcMain.handle("settings:getAll", async () => {
 ipcMain.handle("settings:savePartial", async (_event, payload: Record<string, unknown>) => {
   const partial: {
     rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
-    play?: { targetIp: string; targetPort: number };
+    play?: { targetIp: string; targetPort: number; udpOnly: boolean };
   } = {};
 
   if (payload.rec && typeof payload.rec === "object") {
@@ -348,14 +350,18 @@ ipcMain.handle("settings:savePartial", async (_event, payload: Record<string, un
     }
   }
   if (payload.play && typeof payload.play === "object") {
-    const play = payload.play as { targetIp?: unknown; targetPort?: unknown };
+    const play = payload.play as { targetIp?: unknown; targetPort?: unknown; udpOnly?: unknown };
     if (
       typeof play.targetIp === "string" &&
       play.targetIp.length > 0 &&
       typeof play.targetPort === "number" &&
       Number.isFinite(play.targetPort)
     ) {
-      partial.play = { targetIp: play.targetIp, targetPort: play.targetPort };
+      partial.play = {
+        targetIp: play.targetIp,
+        targetPort: play.targetPort,
+        udpOnly: play.udpOnly === true
+      };
     }
   }
 

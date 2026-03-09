@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("api", {
   getAppSettings: () => ipcRenderer.invoke("settings:getAll"),
   savePartialSettings: (payload: {
     rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
-    play?: { targetIp: string; targetPort: number };
+    play?: { targetIp: string; targetPort: number; udpOnly: boolean };
   }) => ipcRenderer.invoke("settings:savePartial", payload),
   findDefaultMedia: () => ipcRenderer.invoke("app:findDefaultMedia"),
 

@@ -16,6 +16,7 @@ type PersistedSettings = {
   play?: {
     targetIp?: string;
     targetPort?: number;
+    udpOnly?: boolean;
   };
   updatedAtIso?: string;
 };
@@ -34,6 +35,7 @@ export type RecSettings = {
 export type PlaySettings = {
   targetIp: string;
   targetPort: number;
+  udpOnly: boolean;
 };
 
 export type AppSettings = {
@@ -129,13 +131,14 @@ export function loadAppSettings(): AppSettings {
 
   const targetIp = persisted.play?.targetIp;
   const targetPort = persisted.play?.targetPort;
+  const udpOnly = persisted.play?.udpOnly === true;
   if (
     typeof targetIp === "string" &&
     targetIp.length > 0 &&
     typeof targetPort === "number" &&
     Number.isFinite(targetPort)
   ) {
-    result.play = { targetIp, targetPort };
+    result.play = { targetIp, targetPort, udpOnly };
   }
 
   return result;
@@ -170,7 +173,8 @@ export function saveAppSettings(partial: Partial<AppSettings>): void {
   if (partial.play) {
     next.play = {
       targetIp: partial.play.targetIp,
-      targetPort: partial.play.targetPort
+      targetPort: partial.play.targetPort,
+      udpOnly: partial.play.udpOnly
     };
   }
 
