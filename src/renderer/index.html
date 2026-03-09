@@ -33,6 +33,17 @@
               <input id="udp-listen-port" type="number" min="1" max="65535" value="5005" />
             </label>
             <label>
+              Forward IP
+              <input id="forward-target-ip" value="127.0.0.1" />
+            </label>
+          </div>
+
+          <div class="row two">
+            <label>
+              Forward Port
+              <input id="forward-target-port" type="number" min="1" max="65535" value="5006" />
+            </label>
+            <label>
               Output Directory
               <div class="inline">
                 <input id="output-dir" value="./recordings" />

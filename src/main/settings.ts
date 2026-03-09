@@ -10,6 +10,8 @@ type PersistedSettings = {
   };
   rec?: {
     udpListenPort?: number;
+    forwardTargetIp?: string;
+    forwardTargetPort?: number;
   };
   play?: {
     targetIp?: string;
@@ -25,6 +27,8 @@ export type ObsSettings = {
 
 export type RecSettings = {
   udpListenPort: number;
+  forwardTargetIp: string;
+  forwardTargetPort: number;
 };
 
 export type PlaySettings = {
@@ -110,8 +114,17 @@ export function loadAppSettings(): AppSettings {
   }
 
   const udpListenPort = persisted.rec?.udpListenPort;
-  if (typeof udpListenPort === "number" && Number.isFinite(udpListenPort)) {
-    result.rec = { udpListenPort };
+  const forwardTargetIp = persisted.rec?.forwardTargetIp;
+  const forwardTargetPort = persisted.rec?.forwardTargetPort;
+  if (
+    typeof udpListenPort === "number" &&
+    Number.isFinite(udpListenPort) &&
+    typeof forwardTargetIp === "string" &&
+    forwardTargetIp.length > 0 &&
+    typeof forwardTargetPort === "number" &&
+    Number.isFinite(forwardTargetPort)
+  ) {
+    result.rec = { udpListenPort, forwardTargetIp, forwardTargetPort };
   }
 
   const targetIp = persisted.play?.targetIp;
@@ -148,7 +161,9 @@ export function saveAppSettings(partial: Partial<AppSettings>): void {
 
   if (partial.rec) {
     next.rec = {
-      udpListenPort: partial.rec.udpListenPort
+      udpListenPort: partial.rec.udpListenPort,
+      forwardTargetIp: partial.rec.forwardTargetIp,
+      forwardTargetPort: partial.rec.forwardTargetPort
     };
   }
 

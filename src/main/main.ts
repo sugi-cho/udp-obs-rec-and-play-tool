@@ -7,6 +7,7 @@ import { readJsonl } from "./log.js";
 import { loadAppSettings, saveAppSettings } from "./settings.js";
 import type { RecStartRequest } from "./types.js";
 import { UdpPlayer } from "./udpPlayer.js";
+import { UdpRelay } from "./udpRelay.js";
 import { UdpRecorder } from "./udpRecorder.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,9 +22,49 @@ if (!app.isPackaged) {
 const obs = new ObsController();
 const recorder = new UdpRecorder();
 const player = new UdpPlayer();
+const relay = new UdpRelay();
+const detachRecorderListener = relay.addPacketListener((msg) => {
+  recorder.handlePacket(msg);
+});
 
 function monotonicNowSec(): number {
   return Number(process.hrtime.bigint()) / 1e9;
+}
+
+function validatePort(port: number, fieldName: string): void {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${fieldName} は1-65535で指定してください。`);
+  }
+}
+
+function normalizeRelayConfig(payload: {
+  udpListenPort: number;
+  forwardTargetIp: string;
+  forwardTargetPort: number;
+}): { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number } {
+  validatePort(payload.udpListenPort, "UDP Listen Port");
+  validatePort(payload.forwardTargetPort, "Forward Port");
+  const forwardTargetIp = payload.forwardTargetIp.trim();
+  if (!forwardTargetIp) {
+    throw new Error("Forward IP を入力してください。");
+  }
+  if (payload.udpListenPort === payload.forwardTargetPort) {
+    throw new Error("UDP Listen Port と Forward Port は別の値にしてください。");
+  }
+  return {
+    udpListenPort: payload.udpListenPort,
+    forwardTargetIp,
+    forwardTargetPort: payload.forwardTargetPort
+  };
+}
+
+async function applyRelayConfig(payload: {
+  udpListenPort: number;
+  forwardTargetIp: string;
+  forwardTargetPort: number;
+}): Promise<void> {
+  const config = normalizeRelayConfig(payload);
+  await relay.configure(config);
 }
 
 function findDefaultMedia(): {
@@ -118,6 +159,12 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  const settings = loadAppSettings();
+  if (settings.rec) {
+    void applyRelayConfig(settings.rec).catch(() => {
+      // Ignore startup relay errors and let the UI surface them on action.
+    });
+  }
   createMainWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -128,6 +175,8 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    detachRecorderListener();
+    void relay.stop();
     app.quit();
   }
 });
@@ -143,31 +192,43 @@ ipcMain.handle("rec:start", async (_event, payload: RecStartRequest) => {
     throw new Error("すでにREC中です。");
   }
 
+  const relayConfig = normalizeRelayConfig(payload);
+  await relay.configure(relayConfig);
+
   saveAppSettings({
     obs: {
       url: payload.obs.url,
       password: payload.obs.password
     },
-    rec: {
-      udpListenPort: payload.udpListenPort
-    }
+    rec: relayConfig
   });
 
   await obs.startRecord(payload.obs);
   const t0Sec = monotonicNowSec();
+  try {
+    const session = await recorder.start({
+      outDir: payload.outDir,
+      t0Sec,
+      meta: {
+        appVersion: app.getVersion(),
+        obsWsUrl: payload.obs.url,
+        udpListenPort: relayConfig.udpListenPort,
+        forwardTargetIp: relayConfig.forwardTargetIp,
+        forwardTargetPort: relayConfig.forwardTargetPort
+      }
+    });
 
-  const session = await recorder.start({
-    outDir: payload.outDir,
-    udpListenPort: payload.udpListenPort,
-    t0Sec,
-    meta: {
-      appVersion: app.getVersion(),
-      obsWsUrl: payload.obs.url,
-      udpListenPort: payload.udpListenPort
+    return { ok: true, session };
+  } catch (error) {
+    if (obs.isConnected()) {
+      try {
+        await obs.stopRecord();
+      } catch {
+        // Keep original recorder error.
+      }
     }
-  });
-
-  return { ok: true, session };
+    throw error;
+  }
 });
 
 ipcMain.handle("rec:stop", async () => {
@@ -189,10 +250,12 @@ ipcMain.handle("rec:stop", async () => {
 
 ipcMain.handle("rec:status", async () => {
   const recStatus = recorder.getStatus();
+  const relayStatus = relay.getStatus();
   return {
     ok: true,
     obsConnected: obs.isConnected(),
     recording: recStatus.running,
+    forwarding: relayStatus.running,
     packetCount: recStatus.packetCount,
     session: recStatus.session,
     recentPackets: recStatus.recentPackets
@@ -258,14 +321,30 @@ ipcMain.handle("settings:getAll", async () => {
 
 ipcMain.handle("settings:savePartial", async (_event, payload: Record<string, unknown>) => {
   const partial: {
-    rec?: { udpListenPort: number };
+    rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
     play?: { targetIp: string; targetPort: number };
   } = {};
 
   if (payload.rec && typeof payload.rec === "object") {
-    const rec = payload.rec as { udpListenPort?: unknown };
-    if (typeof rec.udpListenPort === "number" && Number.isFinite(rec.udpListenPort)) {
-      partial.rec = { udpListenPort: rec.udpListenPort };
+    const rec = payload.rec as {
+      udpListenPort?: unknown;
+      forwardTargetIp?: unknown;
+      forwardTargetPort?: unknown;
+    };
+    if (
+      typeof rec.udpListenPort === "number" &&
+      Number.isFinite(rec.udpListenPort) &&
+      typeof rec.forwardTargetIp === "string" &&
+      rec.forwardTargetIp.length > 0 &&
+      typeof rec.forwardTargetPort === "number" &&
+      Number.isFinite(rec.forwardTargetPort)
+    ) {
+      partial.rec = {
+        udpListenPort: rec.udpListenPort,
+        forwardTargetIp: rec.forwardTargetIp,
+        forwardTargetPort: rec.forwardTargetPort
+      };
+      await applyRelayConfig(partial.rec);
     }
   }
   if (payload.play && typeof payload.play === "object") {

@@ -4,7 +4,13 @@ declare global {
   interface Window {
     api?: {
       obsConnect(url: string, password: string): Promise<ApiResult>;
-      recStart(payload: { obs: { url: string; password: string }; udpListenPort: number; outDir: string }): Promise<
+      recStart(payload: {
+        obs: { url: string; password: string };
+        udpListenPort: number;
+        forwardTargetIp: string;
+        forwardTargetPort: number;
+        outDir: string;
+      }): Promise<
         ApiResult<{ session: { sessionDir: string; udpLogPath: string; metaPath: string } }>
       >;
       recStop(): Promise<ApiResult>;
@@ -12,13 +18,13 @@ declare global {
         ApiResult<{
           settings: {
             obs?: { url: string; password: string };
-            rec?: { udpListenPort: number };
+            rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
             play?: { targetIp: string; targetPort: number };
           };
         }>
       >;
       savePartialSettings(payload: {
-        rec?: { udpListenPort: number };
+        rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
         play?: { targetIp: string; targetPort: number };
       }): Promise<ApiResult>;
       findDefaultMedia(): Promise<
@@ -33,6 +39,7 @@ declare global {
         ApiResult<{
           obsConnected: boolean;
           recording: boolean;
+          forwarding: boolean;
           packetCount: number;
           session: { sessionDir: string; udpLogPath: string; metaPath: string } | null;
           recentPackets: {
@@ -160,6 +167,8 @@ showTab("play");
 const obsUrlInput = byId<HTMLInputElement>("obs-url");
 const obsPasswordInput = byId<HTMLInputElement>("obs-password");
 const udpListenPortInput = byId<HTMLInputElement>("udp-listen-port");
+const forwardTargetIpInput = byId<HTMLInputElement>("forward-target-ip");
+const forwardTargetPortInput = byId<HTMLInputElement>("forward-target-port");
 const outputDirInput = byId<HTMLInputElement>("output-dir");
 const recBasicStatus = byId<HTMLDivElement>("rec-basic-status");
 const recPacketList = byId<HTMLDivElement>("rec-packet-list");
@@ -200,6 +209,7 @@ async function refreshRecStatus(): Promise<void> {
     const status = await getApi().recStatus();
     renderStatusLine(recBasicStatus, [
       { label: "OBS", value: Boolean(status.obsConnected) },
+      { label: "FWD", value: Boolean(status.forwarding) },
       { label: "REC", value: Boolean(status.recording) },
       { label: "Packets", value: status.packetCount ?? 0 },
       { label: "Log", value: status.session?.udpLogPath ?? "-" }
@@ -234,6 +244,8 @@ recStartButton.addEventListener("click", async () => {
     const payload = {
       obs: { url: obsUrlInput.value, password: obsPasswordInput.value },
       udpListenPort: Number(udpListenPortInput.value),
+      forwardTargetIp: forwardTargetIpInput.value.trim(),
+      forwardTargetPort: Number(forwardTargetPortInput.value),
       outDir: outputDirInput.value
     };
     const result = await getApi().recStart(payload);
@@ -408,11 +420,51 @@ playLoopToggle.addEventListener("change", () => {
 });
 
 udpListenPortInput.addEventListener("change", async () => {
-  const port = Number(udpListenPortInput.value);
-  if (!Number.isFinite(port)) {
+  const listenPort = Number(udpListenPortInput.value);
+  const forwardPort = Number(forwardTargetPortInput.value);
+  const forwardIp = forwardTargetIpInput.value.trim();
+  if (!Number.isFinite(listenPort) || !Number.isFinite(forwardPort) || !forwardIp) {
     return;
   }
-  await getApi().savePartialSettings({ rec: { udpListenPort: port } });
+  await getApi().savePartialSettings({
+    rec: {
+      udpListenPort: listenPort,
+      forwardTargetIp: forwardIp,
+      forwardTargetPort: forwardPort
+    }
+  });
+});
+
+forwardTargetIpInput.addEventListener("change", async () => {
+  const listenPort = Number(udpListenPortInput.value);
+  const forwardPort = Number(forwardTargetPortInput.value);
+  const forwardIp = forwardTargetIpInput.value.trim();
+  if (!Number.isFinite(listenPort) || !Number.isFinite(forwardPort) || !forwardIp) {
+    return;
+  }
+  await getApi().savePartialSettings({
+    rec: {
+      udpListenPort: listenPort,
+      forwardTargetIp: forwardIp,
+      forwardTargetPort: forwardPort
+    }
+  });
+});
+
+forwardTargetPortInput.addEventListener("change", async () => {
+  const listenPort = Number(udpListenPortInput.value);
+  const forwardPort = Number(forwardTargetPortInput.value);
+  const forwardIp = forwardTargetIpInput.value.trim();
+  if (!Number.isFinite(listenPort) || !Number.isFinite(forwardPort) || !forwardIp) {
+    return;
+  }
+  await getApi().savePartialSettings({
+    rec: {
+      udpListenPort: listenPort,
+      forwardTargetIp: forwardIp,
+      forwardTargetPort: forwardPort
+    }
+  });
 });
 
 targetIpInput.addEventListener("change", async () => {
@@ -567,6 +619,7 @@ video.addEventListener("contextmenu", (e) => e.preventDefault());
 
 renderStatusLine(recBasicStatus, [
   { label: "OBS", value: false },
+  { label: "FWD", value: false },
   { label: "REC", value: false },
   { label: "Packets", value: 0 },
   { label: "Log", value: "-" }
@@ -612,6 +665,12 @@ if (!window.api) {
         }
         if (typeof appSettingsRes.settings.rec?.udpListenPort === "number") {
           udpListenPortInput.value = String(appSettingsRes.settings.rec.udpListenPort);
+        }
+        if (appSettingsRes.settings.rec?.forwardTargetIp) {
+          forwardTargetIpInput.value = appSettingsRes.settings.rec.forwardTargetIp;
+        }
+        if (typeof appSettingsRes.settings.rec?.forwardTargetPort === "number") {
+          forwardTargetPortInput.value = String(appSettingsRes.settings.rec.forwardTargetPort);
         }
         if (appSettingsRes.settings.play?.targetIp) {
           targetIpInput.value = appSettingsRes.settings.play.targetIp;
