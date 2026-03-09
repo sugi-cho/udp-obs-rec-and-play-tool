@@ -1,4 +1,3 @@
-import dgram from "node:dgram";
 import fs from "node:fs";
 import path from "node:path";
 import { createJsonlWriter, createSessionDir } from "./log.js";
@@ -20,7 +19,6 @@ function monotonicNowSec(): number {
 }
 
 export class UdpRecorder {
-  private socket: dgram.Socket | null = null;
   private writer: Writer | null = null;
   private packetCount = 0;
   private t0 = 0;
@@ -34,7 +32,7 @@ export class UdpRecorder {
     recentPackets: RecentPacket[];
   } {
     return {
-      running: this.socket !== null,
+      running: this.writer !== null,
       packetCount: this.packetCount,
       session: this.session,
       recentPackets: [...this.recentPackets]
@@ -43,11 +41,10 @@ export class UdpRecorder {
 
   async start(params: {
     outDir: string;
-    udpListenPort: number;
     t0Sec: number;
     meta: Record<string, unknown>;
   }): Promise<SessionInfo> {
-    if (this.socket) {
+    if (this.writer) {
       throw new Error("UDP記録はすでに開始しています。");
     }
 
@@ -68,64 +65,48 @@ export class UdpRecorder {
       ),
       "utf-8"
     );
-
-    const socket = dgram.createSocket("udp4");
     const writer = createJsonlWriter(udpLogPath);
-    this.socket = socket;
     this.writer = writer;
     this.packetCount = 0;
     this.t0 = params.t0Sec;
     this.session = session;
     this.recentPackets = [];
 
-    socket.on("message", (msg) => {
-      const t = monotonicNowSec() - this.t0;
-      const data_b64 = msg.toString("base64");
-      const osc = parseOscPreview(msg);
-      this.packetCount += 1;
-      writer.write({ t, data_b64 });
-
-      this.recentPackets.push({
-        seq: this.packetCount,
-        t,
-        size: msg.length,
-        data_b64,
-        osc
-      });
-      if (this.recentPackets.length > MAX_RECENT_PACKETS) {
-        this.recentPackets.shift();
-      }
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const onError = (err: Error) => {
-        socket.off("listening", onListening);
-        reject(err);
-      };
-      const onListening = () => {
-        socket.off("error", onError);
-        resolve();
-      };
-      socket.once("error", onError);
-      socket.once("listening", onListening);
-      socket.bind(params.udpListenPort);
-    });
-
     return session;
   }
 
-  async stop(): Promise<void> {
-    const socket = this.socket;
+  handlePacket(msg: Buffer): void {
     const writer = this.writer;
-    this.socket = null;
+    if (!writer) {
+      return;
+    }
+
+    const t = monotonicNowSec() - this.t0;
+    const data_b64 = msg.toString("base64");
+    const osc = parseOscPreview(msg);
+    this.packetCount += 1;
+    writer.write({ t, data_b64 });
+
+    this.recentPackets.push({
+      seq: this.packetCount,
+      t,
+      size: msg.length,
+      data_b64,
+      osc
+    });
+    if (this.recentPackets.length > MAX_RECENT_PACKETS) {
+      this.recentPackets.shift();
+    }
+  }
+
+  async stop(): Promise<void> {
+    const writer = this.writer;
     this.writer = null;
+    this.packetCount = 0;
+    this.t0 = 0;
+    this.session = null;
     this.recentPackets = [];
 
-    if (socket) {
-      await new Promise<void>((resolve) => {
-        socket.close(() => resolve());
-      });
-    }
     if (writer) {
       await writer.close();
     }

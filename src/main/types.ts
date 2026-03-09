@@ -6,6 +6,8 @@ export type ObsConfig = {
 export type RecStartRequest = {
   obs: ObsConfig;
   udpListenPort: number;
+  forwardTargetIp: string;
+  forwardTargetPort: number;
   outDir: string;
 };
 

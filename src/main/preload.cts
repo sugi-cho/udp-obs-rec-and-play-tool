@@ -2,13 +2,19 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   obsConnect: (url: string, password: string) => ipcRenderer.invoke("obs:connect", { url, password }),
-  recStart: (payload: { obs: { url: string; password: string }; udpListenPort: number; outDir: string }) =>
+  recStart: (payload: {
+    obs: { url: string; password: string };
+    udpListenPort: number;
+    forwardTargetIp: string;
+    forwardTargetPort: number;
+    outDir: string;
+  }) =>
     ipcRenderer.invoke("rec:start", payload),
   recStop: () => ipcRenderer.invoke("rec:stop"),
   recStatus: () => ipcRenderer.invoke("rec:status"),
   getAppSettings: () => ipcRenderer.invoke("settings:getAll"),
   savePartialSettings: (payload: {
-    rec?: { udpListenPort: number };
+    rec?: { udpListenPort: number; forwardTargetIp: string; forwardTargetPort: number };
     play?: { targetIp: string; targetPort: number };
   }) => ipcRenderer.invoke("settings:savePartial", payload),
   findDefaultMedia: () => ipcRenderer.invoke("app:findDefaultMedia"),
